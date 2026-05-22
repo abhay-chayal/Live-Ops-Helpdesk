@@ -55,8 +55,12 @@ export interface TicketLockedPayload {
   expiresAt: number;
 }
 
+export type UnlockReason = 'manual' | 'disconnect' | 'expired' | 'save';
+
 export interface TicketUnlockedPayload {
   ticketId: string;
+  reason?: UnlockReason;   // why the lock was released
+  agentName?: string;      // who held it (for disconnect toast)
 }
 
 export interface LockDeniedPayload {

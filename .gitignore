@@ -30,14 +30,9 @@ yarn-debug.log*
 yarn-error.log*
 .pnpm-debug.log*
 
-# env files
-.env
-.env.local
-.env.production
-!.env.example
-
-# compiled server output
-/dist
+# env files — block real secrets, allow templates
+.env*
+!.env*.example
 
 # vercel
 .vercel

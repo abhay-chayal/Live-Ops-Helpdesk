@@ -1,49 +1,41 @@
 import { io, Socket } from 'socket.io-client';
 
 // ── Singleton socket instance ─────────────────────────────────
-// In production (Vercel / Railway) the socket server runs on the
-// same origin as Next.js via the custom server — so we use
-// window.location.origin. In local dev, fall back to :3000.
+// One connection per browser tab. Exported as a module-level
+// singleton so every hook/component accesses the same socket.
+
+const SERVER_URL = process.env.NEXT_PUBLIC_SOCKET_URL || 'http://localhost:4000';
 
 let socket: Socket | null = null;
-
-function getServerUrl(): string {
-  if (process.env.NEXT_PUBLIC_SOCKET_URL) {
-    return process.env.NEXT_PUBLIC_SOCKET_URL;
-  }
-  // In the browser, use the current page origin (custom server co-located)
-  if (typeof window !== 'undefined') {
-    return window.location.origin;
-  }
-  return 'http://localhost:3000';
-}
 
 /**
  * Returns the singleton Socket.io client instance.
  * Creates it on first call, reuses on subsequent calls.
+ * agentName is encoded in the handshake query for server-side presence.
  */
 export function getSocket(agentName?: string): Socket {
   if (!socket) {
-    socket = io(getServerUrl(), {
+    socket = io(SERVER_URL, {
       query: { agentName: agentName || 'Anonymous' },
-      autoConnect: false,
+      autoConnect: false,          // We control when to connect
       reconnection: true,
       reconnectionAttempts: Infinity,
       reconnectionDelay: 1000,
       reconnectionDelayMax: 5000,
       randomizationFactor: 0.3,
-      transports: ['websocket', 'polling'],
+      transports: ['websocket', 'polling'], // websocket preferred, polling fallback
     });
   }
   return socket;
 }
 
 /**
- * Connect the socket. Call once at app startup.
+ * Connect the socket (call once in the app root).
  */
 export function connectSocket(agentName: string): Socket {
   const s = getSocket(agentName);
   if (!s.connected) {
+    // Update query before connecting
     (s as any).io.opts.query = { agentName };
     s.connect();
   }
@@ -52,6 +44,7 @@ export function connectSocket(agentName: string): Socket {
 
 /**
  * Cleanly disconnect and destroy the singleton.
+ * Call on app unmount or logout.
  */
 export function destroySocket(): void {
   if (socket) {

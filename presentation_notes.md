@@ -102,25 +102,71 @@
 
 ---
 
-### Scene 6 — Disconnect & Recovery (1 minute)
+### Scene 6A — Ghost Disconnect Auto-Unlock (1 minute)
 
-**What to do:**
-1. Have Tab A hold a lock
-2. **Kill the server** (Ctrl+C in terminal)
+> **This is the most impressive demo moment. Set it up carefully.**
 
-**What the audience sees (within 5 seconds):**
-- **Both tabs** show a red banner: "Connection Lost — Reconnecting to Live Ops Server..."
-- Tab A's ticket remains locked in the UI (optimistic state)
+**Setup:**
+1. Make sure Tab A (Agent Alex) has a ticket locked — open the Edit modal
+2. Leave the modal open in Tab A
+3. Make sure Tab B (Agent Sam) is visible and shows the 🔒 lock badge on that ticket
 
-3. **Restart the server** (`npm run server`)
+**What to do:** 
+Close **Tab A entirely** (close the browser tab, not just navigate away).
 
-**What the audience sees:**
-- Banner disappears from both tabs
-- Both UIs re-sync via `initial_state` — the lock is now gone (server released it on disconnect)
-- Tab B's edit button is re-enabled
+**What the audience observes in Tab B within 5 seconds:**
+- The grayed row instantly clears — full color returns
+- The 🔒 lock badge disappears with a smooth animation
+- The Edit button transitions from **"🔒 Locked"** back to **"Edit"** (re-enabled)
+- A cyan toast appears: **"🔓 Ticket unlocked — Agent Alex disconnected"**
+- The Online Agents counter drops by 1 (Alex's avatar leaves the presence strip)
 
 **What to say:**
-> "When Agent Alex disconnected, the server immediately released all their locks. No manual intervention. The system prevented a permanent lock from blocking the entire team."
+> "Agent Alex closed their browser — no Save, no Cancel, just closed the tab. Watch Tab B."
+>
+> *[pause for effect as the lock clears]*
+>
+> "The server detected the disconnect, released every lock Alex held, and broadcast the unlock to all remaining agents — automatically. In under 5 seconds. No manual admin intervention. No stuck ticket."
+
+**Exact mechanism to explain if asked:**
+> "Socket.io fires a server-side `disconnect` event the moment the TCP connection is confirmed closed — within our 5-second ping timeout. The server then calls `releaseAllLocksForSocket(socket.id)`, iterates every lock owned by that socket ID, removes them from the memory map, and broadcasts `ticket_unlocked` with `reason: 'disconnect'` to every connected client. The client's toast handler pattern-matches on that reason to show the specific disconnect message."
+
+**Business value:**
+- Prevents permanent ticket blockage when an agent's laptop dies, browser crashes, or network drops
+- No IT admin needs to manually clear stuck locks
+- Support SLAs are protected — tickets return to the queue automatically
+
+---
+
+### Scene 6B — Server Restart + Reconnect Sync (1 minute)
+
+**What to do:**
+1. Ensure both Tab A and Tab B are open and showing tickets
+2. In the server terminal, press **Ctrl+C** to kill the server
+
+**What the audience observes within 5 seconds:**
+- **Both tabs** show the red reconnecting banner at the top: **"Connection Lost — Reconnecting to Live Ops Server..."**
+- The LIVE badge in the header switches to **OFFLINE** (red)
+- The board remains visible with its last-known state — no blank screen
+
+3. Restart the server: `npm run server`
+
+**What the audience observes:**
+- The red banner smoothly animates away (height collapses)
+- LIVE badge goes green and starts pulsing again
+- A green toast appears: **"✅ Reconnected — syncing state..."**
+- Both boards now reflect the **current server truth** — any locks that existed before the kill are now gone (server restarted fresh)
+
+**What to say:**
+> "When the server went down, both clients showed the disconnect banner and entered reconnect mode — they're retrying every second with exponential backoff, up to 5 seconds between attempts. The moment the server comes back, the connection re-establishes and the server immediately emits the full current state. No page refresh. No user action. Pure WebSocket self-healing."
+
+**Exact mechanism to explain if asked:**
+> "The socket singleton in `lib/socket.ts` configures `reconnection: true` with `reconnectionAttempts: Infinity`. Socket.io's internal transport manager handles the retry loop. On reconnect, the server's `connection` handler fires as normal — identical to a fresh connect — and emits `initial_state` containing the full ticket list, all active locks, and the current agent roster. The client's `useSocket` hook receives this and calls `setInitialState()` in Zustand, which does a full store replacement."
+
+**Business value:**
+- Zero data loss during server restarts or network interruptions
+- Support agents stay productive — no "please refresh the page" instructions
+- System degrades gracefully under infrastructure failures
 
 ---
 
@@ -152,11 +198,13 @@
 
 ## 🏗️ Technical Architecture Highlights (For Engineers)
 
-- **Atomic locking**: `Map<ticketId, {agentName, socketId}>` with `acquireLock()` being synchronous — Node.js event loop guarantees no race conditions
-- **Targeted notifications**: Lock denial toasts emit only to the requesting socket (`socket.emit()` not `io.emit()`)
-- **Stale lock prevention**: `socket.on('disconnect')` triggers `releaseAllLocksForSocket()` before the event loop cycles
-- **Reconnect sync**: Every `connect` event triggers `initial_state` emission — no polling, no stale UI
-- **No setInterval anywhere** on the client — pure event-driven architecture
+- **Atomic locking**: `Map<ticketId, {agentName, socketId}>` — Node.js single-threaded event loop guarantees no race conditions without a mutex
+- **Targeted notifications**: Lock denial toasts use `socket.emit()` (targeted); all state updates use `io.emit()` (broadcast) — never mixed
+- **Ghost-lock prevention**: `socket.on('disconnect')` → `releaseAllLocksForSocket()` runs synchronously before next event loop tick
+- **Typed unlock reasons**: Every `ticket_unlocked` carries `reason: 'manual' | 'save' | 'disconnect' | 'expired'` — client shows precise contextual toasts
+- **Reconnect sync**: Every `connect` event (including reconnects) triggers `initial_state` — single hydration point, no polling
+- **React Strict Mode safe**: `useRef(false)` guard prevents double listener registration from double-mount in development
+- **No `setInterval` on client** — pure event-driven; `setInterval` only exists server-side for ticket streaming
 
 ---
 

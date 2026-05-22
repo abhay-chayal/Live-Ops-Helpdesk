@@ -34,6 +34,7 @@ export function useSocket({ agentName }: UseSocketOptions) {
   } = useTicketStore();
 
   const boundRef = useRef(false);
+  const hasConnectedOnce = useRef(false); // tracks reconnect vs first connect
 
   useEffect(() => {
     if (boundRef.current) return;
@@ -45,6 +46,11 @@ export function useSocket({ agentName }: UseSocketOptions) {
 
     socket.on('connect', () => {
       setConnectionStatus(true);
+      if (hasConnectedOnce.current) {
+        // This is a reconnect — show confirmation banner
+        toast.success('✅ Reconnected — syncing state...', { duration: 3000 });
+      }
+      hasConnectedOnce.current = true;
       console.log('[Socket] Connected:', socket.id);
     });
 
@@ -60,7 +66,7 @@ export function useSocket({ agentName }: UseSocketOptions) {
 
     // ── RECONNECT SYNC ──────────────────────────────────────────
     // Server emits initial_state on EVERY connect/reconnect.
-    // This hydrates the full store with current server truth.
+    // This is the single authoritative re-hydration point — no polling.
     socket.on('initial_state', (payload: InitialStatePayload) => {
       setInitialState(payload);
       console.log(
@@ -95,8 +101,20 @@ export function useSocket({ agentName }: UseSocketOptions) {
       }
     });
 
-    socket.on('ticket_unlocked', ({ ticketId }: TicketUnlockedPayload) => {
-      unlockTicket(ticketId);
+    socket.on('ticket_unlocked', (payload: TicketUnlockedPayload) => {
+      unlockTicket(payload.ticketId);
+
+      // Show a context-aware toast based on WHY the ticket was unlocked
+      if (payload.reason === 'disconnect' && payload.agentName) {
+        // Ghost-lock cleanup: an agent dropped unexpectedly — notify all remaining agents
+        toast(`🔓 Ticket unlocked — ${payload.agentName} disconnected`, {
+          icon: '🔌',
+          duration: 5000,
+          style: { background: '#164e63', color: '#e0f2fe', border: '1px solid #0891b2' },
+        });
+      }
+      // 'save' → ticket_updated already provides the update; silent unlock is cleaner
+      // 'manual' / 'expired' → handled by lock_expired event; no duplicate toast
     });
 
     // ── LOCK DENIED — only the requesting client receives this ──

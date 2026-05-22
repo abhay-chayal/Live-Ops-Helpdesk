@@ -3,13 +3,12 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "dev": "ts-node --project server.tsconfig.json server-custom.ts",
+    "dev": "next dev --port 3000",
     "build": "next build",
-    "start": "node dist/server-custom.js",
-    "build:server": "tsc --project server.tsconfig.json",
-    "build:all": "npm run build && npm run build:server",
+    "start": "next start",
     "lint": "eslint",
-    "server:standalone": "ts-node --project server.tsconfig.json server/index.ts"
+    "server": "ts-node --project server.tsconfig.json server/index.ts",
+    "server:dev": "ts-node --project server.tsconfig.json --watch server/index.ts"
   },
   "dependencies": {
     "@types/cors": "^2.8.19",

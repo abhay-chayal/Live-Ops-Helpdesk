@@ -18,17 +18,22 @@ import { lockManager } from './lockManager';
 import { generateTicket } from './ticketGenerator';
 
 // ── Server config ─────────────────────────────────────────────
-const PORT = 4000;
+const PORT = Number(process.env.PORT) || 4000;
 const TICKET_STREAM_INTERVAL_MS = 30_000; // new ticket every 30s
 
+// ── CORS: read from env in production, fall back to localhost ──
+const rawOrigins = process.env.ALLOWED_ORIGINS || 'http://localhost:3000,http://127.0.0.1:3000';
+const allowedOrigins = rawOrigins.split(',').map((o) => o.trim());
+console.log('[CORS] Allowed origins:', allowedOrigins);
+
 const app = express();
-app.use(cors());
+app.use(cors({ origin: allowedOrigins, credentials: true }));
 app.use(express.json());
 
 const httpServer = createServer(app);
 const io = new Server(httpServer, {
   cors: {
-    origin: ['http://localhost:3000', 'http://127.0.0.1:3000'],
+    origin: allowedOrigins,
     methods: ['GET', 'POST'],
     credentials: true,
   },
@@ -111,7 +116,7 @@ io.on('connection', (socket: Socket) => {
     const released = lockManager.releaseLock(ticketId, socket.id);
 
     if (released) {
-      io.emit('ticket_unlocked', { ticketId });
+      io.emit('ticket_unlocked', { ticketId, reason: 'manual', agentName: payload.agentName });
       console.log(`[Lock] RELEASED: ${payload.agentName} → ${ticketId}`);
     }
   });
@@ -135,7 +140,7 @@ io.on('connection', (socket: Socket) => {
       // Release lock after save
       lockManager.releaseLock(ticket.id, socket.id);
       io.emit('ticket_updated', { ticket: updated });
-      io.emit('ticket_unlocked', { ticketId: ticket.id });
+      io.emit('ticket_unlocked', { ticketId: ticket.id, reason: 'save', agentName });
       console.log(`[Ticket] UPDATED: ${ticket.id} by ${agentName}`);
     }
   });
@@ -144,11 +149,12 @@ io.on('connection', (socket: Socket) => {
   socket.on('disconnect', (reason) => {
     console.log(`[Socket] Disconnected: ${agentName} (${socket.id}) — ${reason}`);
 
-    // Release all locks held by this socket → prevents stale locks
+    // Release all locks held by this socket → prevents stale / ghost locks
     const releasedTicketIds = lockManager.releaseAllLocksForSocket(socket.id);
     releasedTicketIds.forEach((ticketId) => {
-      io.emit('ticket_unlocked', { ticketId });
-      console.log(`[Lock] AUTO-RELEASED on disconnect: ${ticketId} (was ${agentName})`);
+      // Broadcast with reason='disconnect' so other clients can show a specific toast
+      io.emit('ticket_unlocked', { ticketId, reason: 'disconnect', agentName });
+      console.log(`[Lock] GHOST-LOCK CLEARED on disconnect: ${ticketId} (was held by ${agentName})`);
     });
 
     // Remove presence
