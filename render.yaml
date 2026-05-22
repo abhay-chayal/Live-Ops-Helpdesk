@@ -1,0 +1,18 @@
+# render.yaml — Render.com zero-config deployment
+# Docs: https://render.com/docs/blueprint-spec
+
+services:
+  - type: web
+    name: live-ops-helpdesk-server
+    runtime: node
+    region: oregon           # Choose closest to your users
+    plan: free               # Free tier (spins down after 15min inactivity)
+    buildCommand: npm install && npm run server:build
+    startCommand: npm run server:start
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: 10000          # Render assigns this automatically
+      - key: ALLOWED_ORIGINS
+        sync: false           # Set manually in Render dashboard after Vercel deploy

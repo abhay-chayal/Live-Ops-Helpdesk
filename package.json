@@ -8,7 +8,9 @@
     "start": "next start",
     "lint": "eslint",
     "server": "ts-node --project server.tsconfig.json server/index.ts",
-    "server:dev": "ts-node --project server.tsconfig.json --watch server/index.ts"
+    "server:dev": "ts-node --project server.tsconfig.json --watch server/index.ts",
+    "server:build": "tsc --project server.tsconfig.json",
+    "server:start": "node dist/server/server/index.js"
   },
   "dependencies": {
     "@types/cors": "^2.8.19",
@@ -22,6 +24,8 @@
     "react-hot-toast": "^2.6.0",
     "socket.io": "^4.8.3",
     "socket.io-client": "^4.8.3",
+    "ts-node": "^10.9.2",
+    "typescript": "^5",
     "zustand": "^5.0.13"
   },
   "devDependencies": {
@@ -32,8 +36,6 @@
     "eslint": "^9",
     "eslint-config-next": "16.2.6",
     "tailwindcss": "^4",
-    "ts-node": "^10.9.2",
-    "tsconfig-paths": "^4.2.0",
-    "typescript": "^5"
+    "tsconfig-paths": "^4.2.0"
   }
 }
